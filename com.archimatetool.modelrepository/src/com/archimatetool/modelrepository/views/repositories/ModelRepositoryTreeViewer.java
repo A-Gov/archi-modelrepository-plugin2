@@ -85,9 +85,10 @@ public class ModelRepositoryTreeViewer extends TreeViewer implements IRepository
         
         RepositoryListenerManager.getInstance().addListener(this);
         
-        // Remove listener
+        // Remove listeners
         getTree().addDisposeListener(e -> {
             RepositoryListenerManager.getInstance().removeListener(ModelRepositoryTreeViewer.this);
+            RepositoryTreeModel.getInstance().removeListener(ModelRepositoryTreeViewer.this);
         });
         
         // Tooltip support

@@ -18,6 +18,7 @@ import org.osgi.framework.BundleContext;
 import com.archimatetool.editor.FileLogger;
 import com.archimatetool.editor.utils.StringUtils;
 import com.archimatetool.modelrepository.preferences.IPreferenceConstants;
+import com.archimatetool.modelrepository.treemodel.RepositoryTreeModel;
 
 
 
@@ -38,6 +39,8 @@ public class ModelRepositoryPlugin extends AbstractUIPlugin {
     // The shared instance
     private static ModelRepositoryPlugin instance;
     
+    private FileLogger fileLogger;
+    
     /**
      * @return the shared instance
      */
@@ -57,8 +60,27 @@ public class ModelRepositoryPlugin extends AbstractUIPlugin {
         setSystemProperties();
         
         // Start logging
+        createLogger();
+        
+        // If user changes repo folder location, close old logger and create a new one and reset RepositoryTreeModel
+        getPreferenceStore().addPropertyChangeListener(event -> {
+            if(IPreferenceConstants.PREFS_REPOSITORY_FOLDER.equals(event.getProperty())) {
+                if(fileLogger != null) {
+                    fileLogger.close();
+                    createLogger();
+                }
+
+                RepositoryTreeModel.getInstance().reset();
+            }
+        });
+    }
+    
+    /**
+     * Create and register a new FileLogger
+     */
+    private void createLogger() {
         try {
-            FileLogger.create("com.archimatetool.modelrepository",
+            fileLogger = FileLogger.create("com.archimatetool.modelrepository",
                               getBundle().getEntry("logging.properties"),
                               new File(getUserModelRepositoryFolder(), "log-%g.txt"));
         }
@@ -99,10 +121,7 @@ public class ModelRepositoryPlugin extends AbstractUIPlugin {
         String path = getPreferenceStore().getString(IPreferenceConstants.PREFS_REPOSITORY_FOLDER);
         
         if(StringUtils.isSet(path)) {
-            File file = normalizedFile(path);
-            if(file.canWrite()) {
-                return file;
-            }
+            return normalizedFile(path);
         }
         
         // Default

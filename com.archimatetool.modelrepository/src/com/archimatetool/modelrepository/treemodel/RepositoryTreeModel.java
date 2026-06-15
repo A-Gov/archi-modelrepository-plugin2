@@ -35,11 +35,6 @@ public class RepositoryTreeModel extends Group {
     static boolean saveToManifest = true;
     
     /**
-     * Backing File
-     */
-    private File backingFile = new File(ModelRepositoryPlugin.getInstance().getUserModelRepositoryFolder(), "repositories.xml"); //$NON-NLS-1$
-    
-    /**
      * Listeners
      */
     private CopyOnWriteArrayList<IRepositoryTreeModelListener> listeners = new CopyOnWriteArrayList<>(); // Avoid possible CMEs
@@ -96,13 +91,38 @@ public class RepositoryTreeModel extends Group {
         return Optional.empty();
     }
     
+    /**
+     * Reset this and load the manifest again notifying listeners
+     */
+    public void reset() {
+        groups.clear();
+        repos.clear();
+
+        try {
+            loadManifest();
+        }
+        catch(IOException | JDOMException ex) {
+            ex.printStackTrace();
+            logger.log(Level.SEVERE, "Loading Manifest", ex); //$NON-NLS-1$
+        }
+        finally {
+            fireListenerEvent(this);
+        }
+    }
+    
     private void loadManifest() throws IOException, JDOMException {
-        if(backingFile.exists()) {
+        File backingFile = getBackingFile();
+        
+        if(backingFile .exists()) {
             Document doc = JDOMUtils.readXMLFile(backingFile);
             if(doc.hasRootElement()) {
                 load(doc.getRootElement(), this);
             }
         }
+    }
+    
+    private File getBackingFile() {
+        return new File(ModelRepositoryPlugin.getInstance().getUserModelRepositoryFolder(), "repositories.xml"); //$NON-NLS-1$
     }
     
     private void load(Element parentElement, Group parentGroup) {
@@ -145,7 +165,7 @@ public class RepositoryTreeModel extends Group {
         
         save(rootElement, this);
         
-        JDOMUtils.write2XMLFile(doc, backingFile);
+        JDOMUtils.write2XMLFile(doc, getBackingFile());
     }
     
     private void save(Element parentElement, Group parentGroup) {
