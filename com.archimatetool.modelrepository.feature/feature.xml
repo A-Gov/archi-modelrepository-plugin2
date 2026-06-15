@@ -2,11 +2,11 @@
 <feature
       id="com.archimatetool.modelrepository.feature"
       label="coArchi2"
-      version="1.3.3.qualifier"
+      version="1.3.4.qualifier"
       provider-name="Archi">
 
    <description>
-      Archi Model Repository (coArchi2)
+      Archi Model Repository (coArchi)
    </description>
 
    <copyright>
