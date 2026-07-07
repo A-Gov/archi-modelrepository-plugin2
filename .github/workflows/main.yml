@@ -1,8 +1,7 @@
 #===============================================================
-# ДІАГНОСТИЧНА YAML КОНФІГУРАЦІЯ ДЛЯ coArchi2
+# SMART YAML КОНФІГУРАЦІЯ ДЛЯ coArchi2
 #===============================================================
-
-name: Build coArchi2 Plugin (Diagnostic Mode)
+name: Build coArchi2 Plugin (Smart Detect)
 
 on:
   push:
@@ -14,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Archi Main Repository
+      - name: Checkout Archi Main Repository (release_5.9.0)
         uses: actions/checkout@v4
         with:
           repository: archimatetool/archi
@@ -33,15 +32,29 @@ jobs:
           distribution: 'temurin'
           cache: maven
 
-      - name: Build with Maven
-        working-directory: ./coArchi2
-        # Запуск з детальним логуванням помилок
-        run: mvn clean package -B -e
+      - name: Set up Ant (if needed)
+        run: sudo apt-get install -y ant
 
-      - name: Diagnostic Directory Output
-        if: always()
-        # Шукаємо будь-які схожі на плагін файли, навіть якщо збірка впала
-        run: find . -type f \( -name "*.zip" -o -name "*.archiplugin" -o -name "*.jar" \)
+      - name: Smart Build (Maven or Ant)
+        working-directory: ./coArchi2
+        run: |
+          echo "=== Вміст кореневої папки плагіну ==="
+          ls -la
+          echo "====================================="
+          
+          if [ -f "pom.xml" ]; then
+            echo "Знайдено pom.xml! Запускаю Maven..."
+            mvn clean package -B -e
+          elif [ -f "build.xml" ]; then
+            echo "Знайдено build.xml! Запускаю Ant..."
+            # Передаємо шлях до Archi на випадок, якщо Ant-скрипт його потребує
+            ant -Darchi.dir=../archi
+          else
+            echo "[ПОМИЛКА] Не знайдено ні pom.xml, ні build.xml у корені!"
+            echo "Шукаю pom.xml у підпапках:"
+            find . -name "pom.xml"
+            exit 1
+          fi
 
       - name: Upload Plugin Artifacts
         uses: actions/upload-artifact@v4
@@ -51,5 +64,5 @@ jobs:
           path: |
             ./coArchi2/**/*.archiplugin
             ./coArchi2/**/*.zip
-
+            ./coArchi2/**/target/*.jar
 #===============================================================
