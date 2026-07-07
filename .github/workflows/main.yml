@@ -1,44 +1,45 @@
+#===============================================================
+# АКТУАЛЬНА YAML КОНФІГУРАЦІЯ (Node 24 Ready) ДЛЯ coArchi2
+#===============================================================
+
 name: Build coArchi2 Plugin
 
 on:
   push:
     branches: [ "master", "main" ]
-  workflow_dispatch: # Дозволяє запустити збірку вручну кліком в інтерфейсі GitHub
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Згідно з рекомендаціями, клонуємо основний репозиторій Archi для отримання archi.target
       - name: Checkout Archi Main Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: archimatetool/archi
           path: archi
 
-      # 2. Клонуємо ваш форк плагіну
       - name: Checkout Plugin Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           path: coArchi2
 
-      # 3. Налаштовуємо Java (Archi 5.x вимагає Java 17)
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           java-version: '17'
           distribution: 'temurin'
           cache: maven
 
-      # 4. Запускаємо Maven Tycho для компіляції плагіну
       - name: Build with Maven
         working-directory: ./coArchi2
         run: mvn clean package
 
-      # 5. Зберігаємо результат (скомпільований плагін) в артефакти GitHub
       - name: Upload Plugin Artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: coArchi2-build
           path: ./coArchi2/**/*.zip
+
+#===============================================================
