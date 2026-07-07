@@ -1,5 +1,5 @@
 #===============================================================
-# YAML КОНФІГУРАЦІЯ (SAFE XML FIX) ДЛЯ coArchi2
+# YAML КОНФІГУРАЦІЯ (BASH FAIL-SAFE) ДЛЯ coArchi2
 #===============================================================
 name: Build coArchi2 Plugin (Tycho Inject - Final)
 
@@ -38,14 +38,15 @@ jobs:
           echo "1. Копіюємо папки плагіну в корінь Archi..."
           cp -r ../coArchi2/com.archimatetool.modelrepository* .
           
-          PARENT_VERSION=$(grep -m1 '<version>' pom.xml | sed 's/.*<version>\(.*\)<\/version>.*/\1/')
+          # Захист || true на випадок, якщо grep не знайде версію
+          PARENT_VERSION=$(grep -m1 '<version>' pom.xml | sed 's/.*<version>\(.*\)<\/version>.*/\1/' || true)
           echo "Archi Parent Version: ${PARENT_VERSION}"
           
           echo "2. Нормалізуємо версії для Плагінів..."
           for module in com.archimatetool.modelrepository com.archimatetool.modelrepository.commandline; do
             if [ -d "$module" ]; then
-              RAW_VERSION=$(grep 'Bundle-Version:' $module/META-INF/MANIFEST.MF | awk '{print $2}' | tr -d '\r')
-              BASE_VERSION=$(echo $RAW_VERSION | sed 's/\.qualifier//')
+              RAW_VERSION=$(grep 'Bundle-Version:' $module/META-INF/MANIFEST.MF | awk '{print $2}' | tr -d '\r' || true)
+              BASE_VERSION=$(echo $RAW_VERSION | sed 's/\.qualifier//' || true)
               MVN_VERSION="${BASE_VERSION}-SNAPSHOT"
               
               sed -i "s/Bundle-Version: .*/Bundle-Version: ${BASE_VERSION}.qualifier/" $module/META-INF/MANIFEST.MF
@@ -60,17 +61,18 @@ jobs:
           
           echo "3. Нормалізуємо версію для Feature..."
           if [ -d "com.archimatetool.modelrepository.feature" ]; then
-            # БЕЗПЕЧНИЙ ПОШУК: Ігноруємо перший рядок XML і шукаємо версію тільки навколо тегу <feature>
-            BASE_VERSION_FEATURE=$(grep '<feature' -A 5 com.archimatetool.modelrepository.feature/feature.xml | grep -m1 -oP 'version="K[0-9.]+(?=[^"]*")')
+            # ВИПРАВЛЕННЯ: Додано "|| true", щоб Bash не падав, якщо grep нічого не знайде
+            BASE_VERSION_FEATURE=$(grep '<feature' -A 5 com.archimatetool.modelrepository.feature/feature.xml | grep -m1 -oP 'version="\K[0-9\.]+(?=[^"]*")' || true)
             
             if [ -z "$BASE_VERSION_FEATURE" ]; then
               BASE_VERSION_FEATURE="1.0.0"
             fi
 
+            # Видаляємо кінцеву крапку, якщо вона зачепилася випадково
+            BASE_VERSION_FEATURE=$(echo "$BASE_VERSION_FEATURE" | sed 's/\.$//' || true)
+
             MVN_VERSION_FEATURE="${BASE_VERSION_FEATURE}-SNAPSHOT"
             
-            # БЕЗПЕЧНА ЗАМІНА: Застосовуємо Perl з передачею через ENV.
-            # Замінює version="..." ТІЛЬКИ всередині тегу <feature ...>
             export B_FEAT="${BASE_VERSION_FEATURE}"
             perl -0777 -pi -e 's/(<feature[^>]+?version=")[^"]*(")/$1$ENV{B_FEAT}.qualifier$2/s' com.archimatetool.modelrepository.feature/feature.xml
             
