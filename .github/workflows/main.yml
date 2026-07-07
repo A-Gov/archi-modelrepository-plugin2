@@ -1,7 +1,7 @@
 #===============================================================
-# YAML КОНФІГУРАЦІЯ (BASH FAIL-SAFE) ДЛЯ coArchi2
+# YAML КОНФІГУРАЦІЯ (ARCHI PLUGIN FIX) ДЛЯ coArchi2
 #===============================================================
-name: Build coArchi2 Plugin (Tycho Inject - Final)
+name: Build coArchi2 Plugin (Tycho Inject - Release)
 
 on:
   push:
@@ -38,7 +38,6 @@ jobs:
           echo "1. Копіюємо папки плагіну в корінь Archi..."
           cp -r ../coArchi2/com.archimatetool.modelrepository* .
           
-          # Захист || true на випадок, якщо grep не знайде версію
           PARENT_VERSION=$(grep -m1 '<version>' pom.xml | sed 's/.*<version>\(.*\)<\/version>.*/\1/' || true)
           echo "Archi Parent Version: ${PARENT_VERSION}"
           
@@ -51,8 +50,6 @@ jobs:
               
               sed -i "s/Bundle-Version: .*/Bundle-Version: ${BASE_VERSION}.qualifier/" $module/META-INF/MANIFEST.MF
               
-              echo "[$module] OSGi: ${BASE_VERSION}.qualifier | Maven: ${MVN_VERSION}"
-              
               cat <<EOF > $module/pom.xml
           <project><modelVersion>4.0.0</modelVersion><parent><groupId>com.archimatetool</groupId><artifactId>archi</artifactId><version>${PARENT_VERSION}</version></parent><artifactId>$module</artifactId><version>${MVN_VERSION}</version><packaging>eclipse-plugin</packaging></project>
           EOF
@@ -61,22 +58,16 @@ jobs:
           
           echo "3. Нормалізуємо версію для Feature..."
           if [ -d "com.archimatetool.modelrepository.feature" ]; then
-            # ВИПРАВЛЕННЯ: Додано "|| true", щоб Bash не падав, якщо grep нічого не знайде
             BASE_VERSION_FEATURE=$(grep '<feature' -A 5 com.archimatetool.modelrepository.feature/feature.xml | grep -m1 -oP 'version="\K[0-9\.]+(?=[^"]*")' || true)
             
             if [ -z "$BASE_VERSION_FEATURE" ]; then
               BASE_VERSION_FEATURE="1.0.0"
             fi
-
-            # Видаляємо кінцеву крапку, якщо вона зачепилася випадково
             BASE_VERSION_FEATURE=$(echo "$BASE_VERSION_FEATURE" | sed 's/\.$//' || true)
-
             MVN_VERSION_FEATURE="${BASE_VERSION_FEATURE}-SNAPSHOT"
             
             export B_FEAT="${BASE_VERSION_FEATURE}"
             perl -0777 -pi -e 's/(<feature[^>]+?version=")[^"]*(")/$1$ENV{B_FEAT}.qualifier$2/s' com.archimatetool.modelrepository.feature/feature.xml
-            
-            echo "[Feature] OSGi: ${BASE_VERSION_FEATURE}.qualifier | Maven: ${MVN_VERSION_FEATURE}"
             
             cat <<EOF > com.archimatetool.modelrepository.feature/pom.xml
           <project><modelVersion>4.0.0</modelVersion><parent><groupId>com.archimatetool</groupId><artifactId>archi</artifactId><version>${PARENT_VERSION}</version></parent><artifactId>com.archimatetool.modelrepository.feature</artifactId><version>${MVN_VERSION_FEATURE}</version><packaging>eclipse-feature</packaging></project>
@@ -90,16 +81,19 @@ jobs:
         working-directory: ./archi
         run: mvn clean package -B
 
-      - name: Package .archiplugin
+      - name: Package .archiplugin (Habr recommendations applied)
         working-directory: ./archi
         run: |
           echo "Збираємо результати..."
-          mkdir -p output/plugins
-          mkdir -p output/features
+          mkdir -p output
           
-          find com.archimatetool.modelrepository*/target/ -name "*.jar" ! -name "*-sources.jar" -type f -exec cp {} output/plugins/ \;
-          mv output/plugins/*feature*.jar output/features/ 2>/dev/null || true
+          # 1. Збираємо всі скомпільовані JAR-модулі в єдину плоску структуру (без підпапок plugins/ чи features/)
+          find com.archimatetool.modelrepository*/target/ -name "*.jar" ! -name "*-sources.jar" -type f -exec cp {} output/ \;
           
+          # 2. Створюємо магічний файл 'archi-plugin', необхідний для розпізнавання плагіну системою
+          echo "Magic file to signify this is an Archi plug-in bundle." > output/archi-plugin
+          
+          # 3. Пакуємо готовий плагін
           cd output
           zip -r ../coArchi2.archiplugin *
 
