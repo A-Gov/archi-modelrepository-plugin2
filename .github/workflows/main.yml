@@ -1,7 +1,7 @@
 #===============================================================
-# SMART YAML КОНФІГУРАЦІЯ ДЛЯ coArchi2
+# ІНЖЕКЦІЙНА YAML КОНФІГУРАЦІЯ ДЛЯ coArchi2
 #===============================================================
-name: Build coArchi2 Plugin (Smart Detect)
+name: Build coArchi2 Plugin (Tycho Inject)
 
 on:
   push:
@@ -13,56 +13,77 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Archi Main Repository (release_5.9.0)
-        uses: actions/checkout@v4
+      - name: Checkout Archi Main Repository
+        uses: actions/checkout@v5
         with:
           repository: archimatetool/archi
           ref: release_5.9.0
           path: archi
 
       - name: Checkout Plugin Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           path: coArchi2
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           java-version: '17'
           distribution: 'temurin'
           cache: maven
 
-      - name: Set up Ant (if needed)
-        run: sudo apt-get install -y ant
-
-      - name: Smart Build (Maven or Ant)
-        working-directory: ./coArchi2
+      - name: Dynamic Tycho Inject
+        working-directory: ./archi
         run: |
-          echo "=== Вміст кореневої папки плагіну ==="
-          ls -la
-          echo "====================================="
+          echo "1. Копіюємо папки плагіну в корінь Archi..."
+          cp -r ../coArchi2/com.archimatetool.modelrepository* .
           
-          if [ -f "pom.xml" ]; then
-            echo "Знайдено pom.xml! Запускаю Maven..."
-            mvn clean package -B -e
-          elif [ -f "build.xml" ]; then
-            echo "Знайдено build.xml! Запускаю Ant..."
-            # Передаємо шлях до Archi на випадок, якщо Ant-скрипт його потребує
-            ant -Darchi.dir=../archi
-          else
-            echo "[ПОМИЛКА] Не знайдено ні pom.xml, ні build.xml у корені!"
-            echo "Шукаю pom.xml у підпапках:"
-            find . -name "pom.xml"
-            exit 1
+          echo "2. Отримуємо версію Archi з головного pom.xml..."
+          PARENT_VERSION=$(grep -m1 '<version>' pom.xml | sed 's/.*<version>\(.*\)<\/version>.*/\1/')
+          echo "Archi Version detected: ${PARENT_VERSION}"
+          
+          echo "3. Генеруємо pom.xml для модулів плагіну..."
+          for module in com.archimatetool.modelrepository com.archimatetool.modelrepository.commandline; do
+            if [ -d "$module" ]; then
+              cat <<EOF > $module/pom.xml
+          <project><modelVersion>4.0.0</modelVersion><parent><groupId>com.archimatetool</groupId><artifactId>archi</artifactId><version>${PARENT_VERSION}</version></parent><artifactId>$module</artifactId><packaging>eclipse-plugin</packaging></project>
+          EOF
+            fi
+          done
+          
+          if [ -d "com.archimatetool.modelrepository.feature" ]; then
+            cat <<EOF > com.archimatetool.modelrepository.feature/pom.xml
+          <project><modelVersion>4.0.0</modelVersion><parent><groupId>com.archimatetool</groupId><artifactId>archi</artifactId><version>${PARENT_VERSION}</version></parent><artifactId>com.archimatetool.modelrepository.feature</artifactId><packaging>eclipse-feature</packaging></project>
+          EOF
           fi
+          
+          echo "4. Вбудовуємо модулі в головний збиральний конвеєр Archi..."
+          perl -0777 -pi -e 's/<\/modules>/\t<module>com.archimatetool.modelrepository<\/module>\n\t<module>com.archimatetool.modelrepository.commandline<\/module>\n\t<module>com.archimatetool.modelrepository.feature<\/module>\n<\/modules>/s' pom.xml
 
-      - name: Upload Plugin Artifacts
-        uses: actions/upload-artifact@v4
-        if: always()
+      - name: Build with Maven
+        working-directory: ./archi
+        run: mvn clean package -B
+
+      - name: Package .archiplugin
+        working-directory: ./archi
+        run: |
+          echo "Збираємо результати..."
+          mkdir -p output/plugins
+          mkdir -p output/features
+          
+          # Збираємо всі скомпільовані JAR (ігноруємо source-архіви)
+          find com.archimatetool.modelrepository*/target/ -name "*.jar" ! -name "*-sources.jar" -type f -exec cp {} output/plugins/ \;
+          
+          # Переміщуємо feature JAR у відповідну папку
+          mv output/plugins/*feature*.jar output/features/ 2>/dev/null || true
+          
+          # Пакуємо готовий плагін
+          cd output
+          zip -r ../coArchi2.archiplugin *
+
+      - name: Upload Plugin Artifact
+        uses: actions/upload-artifact@v5
         with:
-          name: coArchi2-build
-          path: |
-            ./coArchi2/**/*.archiplugin
-            ./coArchi2/**/*.zip
-            ./coArchi2/**/target/*.jar
+          name: coArchi2-ready
+          path: ./archi/coArchi2.archiplugin
 #===============================================================
