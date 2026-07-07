@@ -1,7 +1,7 @@
 #===============================================================
-# ІНЖЕКЦІЙНА YAML КОНФІГУРАЦІЯ ДЛЯ coArchi2
+# YAML КОНФІГУРАЦІЯ (VERSION SYNC) ДЛЯ coArchi2
 #===============================================================
-name: Build coArchi2 Plugin (Tycho Inject)
+name: Build coArchi2 Plugin (Tycho Inject - Strict Versions)
 
 on:
   push:
@@ -32,7 +32,7 @@ jobs:
           distribution: 'temurin'
           cache: maven
 
-      - name: Dynamic Tycho Inject
+      - name: Dynamic Tycho Inject & Version Sync
         working-directory: ./archi
         run: |
           echo "1. Копіюємо папки плагіну в корінь Archi..."
@@ -40,24 +40,34 @@ jobs:
           
           echo "2. Отримуємо версію Archi з головного pom.xml..."
           PARENT_VERSION=$(grep -m1 '<version>' pom.xml | sed 's/.*<version>\(.*\)<\/version>.*/\1/')
-          echo "Archi Version detected: ${PARENT_VERSION}"
           
-          echo "3. Генеруємо pom.xml для модулів плагіну..."
+          echo "3. Синхронізуємо версії та генеруємо pom.xml для модулів..."
           for module in com.archimatetool.modelrepository com.archimatetool.modelrepository.commandline; do
             if [ -d "$module" ]; then
+              # Читаємо OSGi версію з маніфесту та конвертуємо в Maven-формат
+              OSGI_VERSION=$(grep 'Bundle-Version:' $module/META-INF/MANIFEST.MF | awk '{print $2}' | tr -d '\r')
+              MVN_VERSION=${OSGI_VERSION/.qualifier/-SNAPSHOT}
+              echo "Версія модуля $module: $MVN_VERSION"
+              
               cat <<EOF > $module/pom.xml
-          <project><modelVersion>4.0.0</modelVersion><parent><groupId>com.archimatetool</groupId><artifactId>archi</artifactId><version>${PARENT_VERSION}</version></parent><artifactId>$module</artifactId><packaging>eclipse-plugin</packaging></project>
+          <project><modelVersion>4.0.0</modelVersion><parent><groupId>com.archimatetool</groupId><artifactId>archi</artifactId><version>${PARENT_VERSION}</version></parent><artifactId>$module</artifactId><version>${MVN_VERSION}</version><packaging>eclipse-plugin</packaging></project>
           EOF
             fi
           done
           
+          echo "4. Синхронізуємо версію для Feature..."
           if [ -d "com.archimatetool.modelrepository.feature" ]; then
+            # Читаємо версію з feature.xml
+            OSGI_VERSION_FEATURE=$(grep -m1 'version=' com.archimatetool.modelrepository.feature/feature.xml | sed 's/.*version="\([^"]*\)".*/\1/' | tr -d '\r')
+            MVN_VERSION_FEATURE=${OSGI_VERSION_FEATURE/.qualifier/-SNAPSHOT}
+            echo "Версія Feature: $MVN_VERSION_FEATURE"
+            
             cat <<EOF > com.archimatetool.modelrepository.feature/pom.xml
-          <project><modelVersion>4.0.0</modelVersion><parent><groupId>com.archimatetool</groupId><artifactId>archi</artifactId><version>${PARENT_VERSION}</version></parent><artifactId>com.archimatetool.modelrepository.feature</artifactId><packaging>eclipse-feature</packaging></project>
+          <project><modelVersion>4.0.0</modelVersion><parent><groupId>com.archimatetool</groupId><artifactId>archi</artifactId><version>${PARENT_VERSION}</version></parent><artifactId>com.archimatetool.modelrepository.feature</artifactId><version>${MVN_VERSION_FEATURE}</version><packaging>eclipse-feature</packaging></project>
           EOF
           fi
           
-          echo "4. Вбудовуємо модулі в головний збиральний конвеєр Archi..."
+          echo "5. Вбудовуємо модулі в головний збиральний конвеєр Archi..."
           perl -0777 -pi -e 's/<\/modules>/\t<module>com.archimatetool.modelrepository<\/module>\n\t<module>com.archimatetool.modelrepository.commandline<\/module>\n\t<module>com.archimatetool.modelrepository.feature<\/module>\n<\/modules>/s' pom.xml
 
       - name: Build with Maven
@@ -71,13 +81,9 @@ jobs:
           mkdir -p output/plugins
           mkdir -p output/features
           
-          # Збираємо всі скомпільовані JAR (ігноруємо source-архіви)
           find com.archimatetool.modelrepository*/target/ -name "*.jar" ! -name "*-sources.jar" -type f -exec cp {} output/plugins/ \;
-          
-          # Переміщуємо feature JAR у відповідну папку
           mv output/plugins/*feature*.jar output/features/ 2>/dev/null || true
           
-          # Пакуємо готовий плагін
           cd output
           zip -r ../coArchi2.archiplugin *
 
