@@ -1,18 +1,19 @@
-#===============================================================
-# YAML КОНФІГУРАЦІЯ (ARCHI PLUGIN FIX) ДЛЯ coArchi2
-#===============================================================
-name: Build coArchi2 Plugin (Tycho Inject - Release)
+# Назва конфігурації автоматичної збірки плагіну у хмарі GitHub Actions
+name: Build coArchi2 Plugin (Tycho Inject - Final Version)
 
+# Визначаємо тригери, які запускають конфігурацію на виконання
 on:
   push:
-    branches: [ "master", "main" ]
-  workflow_dispatch:
+    branches: [ "master", "main" ] # Автоматичний запуск при комітах у гілки master або main
+  workflow_dispatch: # Дозволяє запускати збірку вручну через веб-інтерфейс вашого репозиторію
 
+# Опис робочих кроків збірки
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest # Використовуємо актуальний та стабільний образ Ubuntu Runner
 
     steps:
+      # Крок 1: Клонуємо офіційний головний репозиторій Archi для побудови цільової платформи
       - name: Checkout Archi Main Repository
         uses: actions/checkout@v5
         with:
@@ -20,11 +21,13 @@ jobs:
           ref: release_5.9.0
           path: archi
 
+      # Крок 2: Клонуємо ваш форк із вихідним кодом плагіну coArchi2
       - name: Checkout Plugin Repository
         uses: actions/checkout@v5
         with:
           path: coArchi2
 
+      # Крок 3: Розгортаємо Java 21 (вимога нових версій Eclipse Tycho для class версії 65.0)
       - name: Set up JDK 21
         uses: actions/setup-java@v5
         with:
@@ -32,24 +35,31 @@ jobs:
           distribution: 'temurin'
           cache: maven
 
+      # Крок 4: Динамічна ін'єкція коду плагіну в ядро Archi та нормалізація версій
       - name: Dynamic Tycho Inject & Version Normalization
         working-directory: ./archi
         run: |
           echo "1. Копіюємо папки плагіну в корінь Archi..."
           cp -r ../coArchi2/com.archimatetool.modelrepository* .
           
+          # Визначаємо поточну ревізію Archi з батьківського файлу конфігурації
           PARENT_VERSION=$(grep -m1 '<version>' pom.xml | sed 's/.*<version>\(.*\)<\/version>.*/\1/' || true)
           echo "Archi Parent Version: ${PARENT_VERSION}"
           
           echo "2. Нормалізуємо версії для Плагінів..."
           for module in com.archimatetool.modelrepository com.archimatetool.modelrepository.commandline; do
             if [ -d "$module" ]; then
+              # Витягуємо поточну версію з OSGi маніфесту
               RAW_VERSION=$(grep 'Bundle-Version:' $module/META-INF/MANIFEST.MF | awk '{print $2}' | tr -d '\r' || true)
               BASE_VERSION=$(echo $RAW_VERSION | sed 's/\.qualifier//' || true)
               MVN_VERSION="${BASE_VERSION}-SNAPSHOT"
               
+              # Переписуємо Bundle-Version, примусово додаючи .qualifier для Tycho
               sed -i "s/Bundle-Version: .*/Bundle-Version: ${BASE_VERSION}.qualifier/" $module/META-INF/MANIFEST.MF
               
+              echo "[$module] OSGi: ${BASE_VERSION}.qualifier | Maven: ${MVN_VERSION}"
+              
+              # Генеруємо сумісний pom.xml для зв'язки з батьківським проектом Archi
               cat <<EOF > $module/pom.xml
           <project><modelVersion>4.0.0</modelVersion><parent><groupId>com.archimatetool</groupId><artifactId>archi</artifactId><version>${PARENT_VERSION}</version></parent><artifactId>$module</artifactId><version>${MVN_VERSION}</version><packaging>eclipse-plugin</packaging></project>
           EOF
@@ -58,6 +68,7 @@ jobs:
           
           echo "3. Нормалізуємо версію для Feature..."
           if [ -d "com.archimatetool.modelrepository.feature" ]; then
+            # Безпечно витягуємо версію з feature.xml, ігноруючи заголовок XML декларації
             BASE_VERSION_FEATURE=$(grep '<feature' -A 5 com.archimatetool.modelrepository.feature/feature.xml | grep -m1 -oP 'version="\K[0-9\.]+(?=[^"]*")' || true)
             
             if [ -z "$BASE_VERSION_FEATURE" ]; then
@@ -66,9 +77,13 @@ jobs:
             BASE_VERSION_FEATURE=$(echo "$BASE_VERSION_FEATURE" | sed 's/\.$//' || true)
             MVN_VERSION_FEATURE="${BASE_VERSION_FEATURE}-SNAPSHOT"
             
+            # Використовуємо Perl через змінні оточення (ENV) для безпечної багаторядкової заміни версії в тегу feature
             export B_FEAT="${BASE_VERSION_FEATURE}"
             perl -0777 -pi -e 's/(<feature[^>]+?version=")[^"]*(")/$1$ENV{B_FEAT}.qualifier$2/s' com.archimatetool.modelrepository.feature/feature.xml
             
+            echo "[Feature] OSGi: ${BASE_VERSION_FEATURE}.qualifier | Maven: ${MVN_VERSION_FEATURE}"
+            
+            # Генеруємо pom.xml для feature модуля
             cat <<EOF > com.archimatetool.modelrepository.feature/pom.xml
           <project><modelVersion>4.0.0</modelVersion><parent><groupId>com.archimatetool</groupId><artifactId>archi</artifactId><version>${PARENT_VERSION}</version></parent><artifactId>com.archimatetool.modelrepository.feature</artifactId><version>${MVN_VERSION_FEATURE}</version><packaging>eclipse-feature</packaging></project>
           EOF
@@ -77,29 +92,31 @@ jobs:
           echo "4. Вбудовуємо модулі в головний збиральний конвеєр Archi..."
           sed -i 's|<\/modules>|\t<module>com.archimatetool.modelrepository<\/module>\n\t<module>com.archimatetool.modelrepository.commandline<\/module>\n\t<module>com.archimatetool.modelrepository.feature<\/module>\n<\/modules>|g' pom.xml
 
+      # Крок 5: Запускаємо компіляцію всього проекту через Maven у пакетному автоматичному режимі (-B)
       - name: Build with Maven
         working-directory: ./archi
         run: mvn clean package -B
 
-      - name: Package .archiplugin (Habr recommendations applied)
+      # Крок 6: Пакуємо скомпільований плагін відповідно до виявлених рекомендацій з Хабра
+      - name: Package .archiplugin
         working-directory: ./archi
         run: |
           echo "Збираємо результати..."
           mkdir -p output
           
-          # 1. Збираємо всі скомпільовані JAR-модулі в єдину плоску структуру (без підпапок plugins/ чи features/)
+          # Копіюємо всі скомпільовані JAR-плагіни в єдину плоску структуру (без вкладених папок plugins/ чи features/)
           find com.archimatetool.modelrepository*/target/ -name "*.jar" ! -name "*-sources.jar" -type f -exec cp {} output/ \;
           
-          # 2. Створюємо магічний файл 'archi-plugin', необхідний для розпізнавання плагіну системою
+          # Створюємо магічний маркерний файл 'archi-plugin', щоб задовольнити перевірку DropinsPluginHandler в Archi
           echo "Magic file to signify this is an Archi plug-in bundle." > output/archi-plugin
           
-          # 3. Пакуємо готовий плагін
+          # Архівуємо та міняємо розширення файлу на .archiplugin
           cd output
           zip -r ../coArchi2.archiplugin *
 
+      # Крок 7: Завантажуємо фінальний працездатний плагін в артефакти веб-інтерфейсу GitHub Actions
       - name: Upload Plugin Artifact
         uses: actions/upload-artifact@v5
         with:
           name: coArchi2-ready
           path: ./archi/coArchi2.archiplugin
-#===============================================================
