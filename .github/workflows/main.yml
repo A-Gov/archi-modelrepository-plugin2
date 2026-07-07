@@ -1,7 +1,7 @@
 #===============================================================
-# YAML КОНФІГУРАЦІЯ (ФІНАЛЬНИЙ FIX) ДЛЯ coArchi2
+# YAML КОНФІГУРАЦІЯ (SAFE XML FIX) ДЛЯ coArchi2
 #===============================================================
-name: Build coArchi2 Plugin (Tycho Inject - Stable)
+name: Build coArchi2 Plugin (Tycho Inject - Final)
 
 on:
   push:
@@ -60,7 +60,8 @@ jobs:
           
           echo "3. Нормалізуємо версію для Feature..."
           if [ -d "com.archimatetool.modelrepository.feature" ]; then
-            BASE_VERSION_FEATURE=$(grep -m1 -oP 'version="\K[0-9\.]+(?=[^"]*")' com.archimatetool.modelrepository.feature/feature.xml)
+            # БЕЗПЕЧНИЙ ПОШУК: Ігноруємо перший рядок XML і шукаємо версію тільки навколо тегу <feature>
+            BASE_VERSION_FEATURE=$(grep '<feature' -A 5 com.archimatetool.modelrepository.feature/feature.xml | grep -m1 -oP 'version="K[0-9.]+(?=[^"]*")')
             
             if [ -z "$BASE_VERSION_FEATURE" ]; then
               BASE_VERSION_FEATURE="1.0.0"
@@ -68,8 +69,10 @@ jobs:
 
             MVN_VERSION_FEATURE="${BASE_VERSION_FEATURE}-SNAPSHOT"
             
-            # ВИПРАВЛЕНО: Коректне екранування для уникнення помилок в jArchi (GraalVM)
-            sed -i 's/version="'"${BASE_VERSION_FEATURE}"'[^"]*"/version="'"${BASE_VERSION_FEATURE}"'.qualifier"/g' com.archimatetool.modelrepository.feature/feature.xml
+            # БЕЗПЕЧНА ЗАМІНА: Застосовуємо Perl з передачею через ENV.
+            # Замінює version="..." ТІЛЬКИ всередині тегу <feature ...>
+            export B_FEAT="${BASE_VERSION_FEATURE}"
+            perl -0777 -pi -e 's/(<feature[^>]+?version=")[^"]*(")/$1$ENV{B_FEAT}.qualifier$2/s' com.archimatetool.modelrepository.feature/feature.xml
             
             echo "[Feature] OSGi: ${BASE_VERSION_FEATURE}.qualifier | Maven: ${MVN_VERSION_FEATURE}"
             
