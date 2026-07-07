@@ -1,8 +1,8 @@
 #===============================================================
-# YAML КОНФІГУРАЦІЯ ДЛЯ coArchi2 (Node 24 + Archiplugin Fix)
+# ДІАГНОСТИЧНА YAML КОНФІГУРАЦІЯ ДЛЯ coArchi2
 #===============================================================
 
-name: Build coArchi2 Plugin
+name: Build coArchi2 Plugin (Diagnostic Mode)
 
 on:
   push:
@@ -14,20 +14,20 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Archi Main Repository (release_5.9.0)
-        uses: actions/checkout@v5 # Оновлено до v5 (Node.js 24)
+      - name: Checkout Archi Main Repository
+        uses: actions/checkout@v4
         with:
           repository: archimatetool/archi
           ref: release_5.9.0
           path: archi
 
       - name: Checkout Plugin Repository
-        uses: actions/checkout@v5 # Оновлено до v5 (Node.js 24)
+        uses: actions/checkout@v4
         with:
           path: coArchi2
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v5 # Оновлено до v5 (Node.js 24)
+        uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
@@ -35,17 +35,21 @@ jobs:
 
       - name: Build with Maven
         working-directory: ./coArchi2
+        # Запуск з детальним логуванням помилок
         run: mvn clean package -B -e
 
+      - name: Diagnostic Directory Output
+        if: always()
+        # Шукаємо будь-які схожі на плагін файли, навіть якщо збірка впала
+        run: find . -type f \( -name "*.zip" -o -name "*.archiplugin" -o -name "*.jar" \)
+
       - name: Upload Plugin Artifacts
-        uses: actions/upload-artifact@v5 # Оновлено до v5 (Node.js 24)
+        uses: actions/upload-artifact@v4
         if: always()
         with:
           name: coArchi2-build
-          # Розширений пошук артефактів для екосистеми Archi/Tycho
           path: |
             ./coArchi2/**/*.archiplugin
             ./coArchi2/**/*.zip
-            ./coArchi2/**/target/*.jar
 
 #===============================================================
