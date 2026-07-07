@@ -1,7 +1,7 @@
 #===============================================================
-# YAML КОНФІГУРАЦІЯ (VERSION NORMALIZER) ДЛЯ coArchi2
+# YAML КОНФІГУРАЦІЯ (ФІНАЛЬНИЙ FIX) ДЛЯ coArchi2
 #===============================================================
-name: Build coArchi2 Plugin (Tycho Inject - Force SNAPSHOT)
+name: Build coArchi2 Plugin (Tycho Inject - Stable)
 
 on:
   push:
@@ -44,13 +44,11 @@ jobs:
           echo "2. Нормалізуємо версії для Плагінів..."
           for module in com.archimatetool.modelrepository com.archimatetool.modelrepository.commandline; do
             if [ -d "$module" ]; then
-              # Читаємо поточну версію і відкидаємо все, крім цифр і крапок
               RAW_VERSION=$(grep 'Bundle-Version:' $module/META-INF/MANIFEST.MF | awk '{print $2}' | tr -d '\r')
               BASE_VERSION=$(echo $RAW_VERSION | sed 's/\.qualifier//')
-              
-              # Примусово записуємо правильні формати
               MVN_VERSION="${BASE_VERSION}-SNAPSHOT"
-              perl -pi -e "s/Bundle-Version: .*/Bundle-Version: ${BASE_VERSION}.qualifier/" $module/META-INF/MANIFEST.MF
+              
+              sed -i "s/Bundle-Version: .*/Bundle-Version: ${BASE_VERSION}.qualifier/" $module/META-INF/MANIFEST.MF
               
               echo "[$module] OSGi: ${BASE_VERSION}.qualifier | Maven: ${MVN_VERSION}"
               
@@ -62,17 +60,16 @@ jobs:
           
           echo "3. Нормалізуємо версію для Feature..."
           if [ -d "com.archimatetool.modelrepository.feature" ]; then
-            # Витягуємо лише цифри базової версії (наприклад 1.0)
             BASE_VERSION_FEATURE=$(grep -m1 -oP 'version="\K[0-9\.]+(?=[^"]*")' com.archimatetool.modelrepository.feature/feature.xml)
             
             if [ -z "$BASE_VERSION_FEATURE" ]; then
-              BASE_VERSION_FEATURE="1.0.0" # Fallback, якщо регулярка нічого не знайде
+              BASE_VERSION_FEATURE="1.0.0"
             fi
 
             MVN_VERSION_FEATURE="${BASE_VERSION_FEATURE}-SNAPSHOT"
             
-            # Примусово прописуємо .qualifier у feature.xml (замінюємо стару версію)
-            perl -pi -e "s/version="${BASE_VERSION_FEATURE}[^"]*"/version="${BASE_VERSION_FEATURE}.qualifier"/g" com.archimatetool.modelrepository.feature/feature.xml
+            # ВИПРАВЛЕНО: Коректне екранування для уникнення помилок в jArchi (GraalVM)
+            sed -i 's/version="'"${BASE_VERSION_FEATURE}"'[^"]*"/version="'"${BASE_VERSION_FEATURE}"'.qualifier"/g' com.archimatetool.modelrepository.feature/feature.xml
             
             echo "[Feature] OSGi: ${BASE_VERSION_FEATURE}.qualifier | Maven: ${MVN_VERSION_FEATURE}"
             
@@ -82,7 +79,7 @@ jobs:
           fi
           
           echo "4. Вбудовуємо модулі в головний збиральний конвеєр Archi..."
-          perl -0777 -pi -e 's/<\/modules>/\t<module>com.archimatetool.modelrepository<\/module>\n\t<module>com.archimatetool.modelrepository.commandline<\/module>\n\t<module>com.archimatetool.modelrepository.feature<\/module>\n<\/modules>/s' pom.xml
+          sed -i 's|<\/modules>|\t<module>com.archimatetool.modelrepository<\/module>\n\t<module>com.archimatetool.modelrepository.commandline<\/module>\n\t<module>com.archimatetool.modelrepository.feature<\/module>\n<\/modules>|g' pom.xml
 
       - name: Build with Maven
         working-directory: ./archi
